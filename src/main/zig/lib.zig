@@ -104,22 +104,29 @@ pub inline fn boolToJboolean(b: bool) jboolean {
 /// Exports all functions with C calling convention from the provided `func_struct` type to be
 /// accessible from Java using the JNI.
 pub fn exportJNI(comptime class_name: []const u8, comptime func_struct: type) void {
-    inline for (@typeInfo(func_struct).@"struct".decls) |decl| {
-        const func = comptime @field(func_struct, decl.name);
+    inline for (@typeInfo(func_struct).@"struct".decl_names) |decl_name| {
+        const func = comptime @field(func_struct, decl_name);
         const func_type = @TypeOf(func);
+
+        if (std.mem.eql(u8, decl_name, "JNI_OnLoad")) {
+            @export(&func, .{
+                .name = decl_name,
+                .linkage = .strong,
+            });
+            continue;
+        }
 
         // If it is not a function, skip.
         if (@typeInfo(func_type) != .@"fn") {
             continue;
         }
 
-
         // If it is not a function with calling convention .C, skip.
-        if (!@typeInfo(func_type).@"fn".calling_convention.eql(.c)) {
+        if (!@typeInfo(func_type).@"fn".attrs.@"callconv".eql(.c)) {
             continue;
         }
 
-        const tmp_name: []const u8 = comptime ("Java." ++ class_name ++ "." ++ decl.name);
+        const tmp_name: []const u8 = comptime ("Java." ++ class_name ++ "." ++ decl_name);
         var export_name: [tmp_name.len]u8 = undefined;
 
         @setEvalBranchQuota(30000);
@@ -148,7 +155,7 @@ inline fn valueLen(comptime ArgsType: type) comptime_int {
 
     return switch (args_type_info) {
         .@"struct" => |s| s.fields.len,
-        .@"void" => 0,
+        .void => 0,
         else => 1,
     };
 }
@@ -792,14 +799,14 @@ pub const JNIEnv = struct {
     /// Informs the VM that the native code no longer needs access to elems.
     pub inline fn releasePrimitiveArrayElements(self: *const JNIEnv, comptime ElementType: type, array: jarray, elems: [*]ElementType, mode: jReleasePrimitiveArrayElementsMode) void {
         return switch (ElementType) {
-            jboolean => self._cJNIEnv.*.*.ReleaseBooleanArrayElements.?(self._cJNIEnv, array, elems, @intFromEnum(mode)),
-            jbyte => self._cJNIEnv.*.*.ReleaseByteArrayElements.?(self._cJNIEnv, array, elems, @intFromEnum(mode)),
-            jchar => self._cJNIEnv.*.*.ReleaseCharArrayElements.?(self._cJNIEnv, array, elems, @intFromEnum(mode)),
-            jshort => self._cJNIEnv.*.*.ReleaseShortArrayElements.?(self._cJNIEnv, array, elems, @intFromEnum(mode)),
-            jint => self._cJNIEnv.*.*.ReleaseIntArrayElements.?(self._cJNIEnv, array, elems, @intFromEnum(mode)),
-            jlong => self._cJNIEnv.*.*.ReleaseLongArrayElements.?(self._cJNIEnv, array, elems, @intFromEnum(mode)),
-            jfloat => self._cJNIEnv.*.*.ReleaseFloatArrayElements.?(self._cJNIEnv, array, elems, @intFromEnum(mode)),
-            jdouble => self._cJNIEnv.*.*.ReleaseDoubleArrayElements.?(self._cJNIEnv, array, elems, @intFromEnum(mode)),
+            jboolean => self._cJNIEnv.*.*.ReleaseBooleanArrayElements.?(self._cJNIEnv, array, elems, @backingInt(mode)),
+            jbyte => self._cJNIEnv.*.*.ReleaseByteArrayElements.?(self._cJNIEnv, array, elems, @backingInt(mode)),
+            jchar => self._cJNIEnv.*.*.ReleaseCharArrayElements.?(self._cJNIEnv, array, elems, @backingInt(mode)),
+            jshort => self._cJNIEnv.*.*.ReleaseShortArrayElements.?(self._cJNIEnv, array, elems, @backingInt(mode)),
+            jint => self._cJNIEnv.*.*.ReleaseIntArrayElements.?(self._cJNIEnv, array, elems, @backingInt(mode)),
+            jlong => self._cJNIEnv.*.*.ReleaseLongArrayElements.?(self._cJNIEnv, array, elems, @backingInt(mode)),
+            jfloat => self._cJNIEnv.*.*.ReleaseFloatArrayElements.?(self._cJNIEnv, array, elems, @backingInt(mode)),
+            jdouble => self._cJNIEnv.*.*.ReleaseDoubleArrayElements.?(self._cJNIEnv, array, elems, @backingInt(mode)),
             jobject => @compileError("Use setObjectArrayElement for jobject"),
             else => @compileError("Unsupported element type"),
         };
@@ -953,7 +960,7 @@ pub const JNIEnv = struct {
     ///
     /// See: https://docs.oracle.com/en/java/javase/22/docs/specs/jni/functions.html#getobjectreftype
     pub inline fn getObjectRefType(self: *const JNIEnv, obj: jobject) jobjectRefType {
-        return @enumFromInt(self._cJNIEnv.*.*.GetObjectRefType.?(self._cJNIEnv, obj));
+        return @fromBackingInt(@intCast(self._cJNIEnv.*.*.GetObjectRefType.?(self._cJNIEnv, obj)));
     }
 
     /// Returns the java.lang.Module object for the module that the class is a member of.
